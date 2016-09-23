@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -393,7 +394,8 @@ OUTER_LOOP:
 // Render renders Markdown to HTML with special links.
 func Render(rawBytes []byte, urlPrefix string, metas map[string]string) []byte {
 	urlPrefix = strings.Replace(urlPrefix, space, spaceEncoded, -1)
-	result := RenderRaw(rawBytes, urlPrefix)
+	//result := RenderRaw(rawBytes, urlPrefix)
+	result := renderRst(rawBytes, urlPrefix)
 	result = PostProcess(result, urlPrefix, metas)
 	result = Sanitizer.SanitizeBytes(result)
 	return result
@@ -402,4 +404,35 @@ func Render(rawBytes []byte, urlPrefix string, metas map[string]string) []byte {
 // RenderString renders Markdown to HTML with special links and returns string type.
 func RenderString(raw, urlPrefix string, metas map[string]string) string {
 	return string(Render([]byte(raw), urlPrefix, metas))
+}
+
+// getRstContent calls the Python script rst2html as an external helper
+// to convert reStructuredText content to HTML.
+func renderRst(content []byte, urlPrefix string) []byte {
+
+	path, err := exec.LookPath("rst2html")
+	if err != nil {
+		path, err = exec.LookPath("rst2html.py")
+		if err != nil {
+			//jww.ERROR.Println("rst2html / rst2html.py not found in $PATH: Please install.\n",
+			//	"                 Leaving reStructuredText content unrendered.")
+			return (content)
+		}
+	}
+
+	cmd := exec.Command(path, "--leave-comments")
+	cmd.Stdin = bytes.NewReader(content)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		//jww.ERROR.Println(err)
+	}
+
+	rstLines := strings.Split(out.String(), "\n")
+	for i, line := range rstLines {
+		if strings.HasPrefix(line, "<body>") {
+			rstLines = (rstLines[i+1 : len(rstLines)-3])
+		}
+	}
+	return []byte(strings.Join(rstLines, "\n"))
 }
